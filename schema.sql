@@ -62,6 +62,29 @@ create policy "paiements_owner_all" on paiements
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- ------------------------------------------------------------------------
+-- Temps réel : permet au site de recevoir automatiquement les changements
+-- (nouvelle vente, encaissement...) faits depuis un autre appareil connecté
+-- au même compte, sans avoir à recharger la page. Le bloc do $$ ... end $$
+-- évite une erreur si le script est ré-exécuté et que les tables sont déjà
+-- dans la publication.
+-- ------------------------------------------------------------------------
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'ventes'
+  ) then
+    alter publication supabase_realtime add table ventes;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'paiements'
+  ) then
+    alter publication supabase_realtime add table paiements;
+  end if;
+end $$;
+
 -- ==========================================================================
 -- Après avoir exécuté ce script :
 -- 1. Va dans Authentication > Users > "Add user" et crée TON compte

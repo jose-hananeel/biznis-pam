@@ -11,14 +11,35 @@ system fait main dans l'esprit de shadcn/ui.
 - **Enregistrer une vente** : nom du client, montant, description (par
   défaut « Fournitures scolaires »), cash ou crédit, et une date modifiable
   (utile pour rattraper les ventes déjà faites avant la mise en place du site).
+  Pour une vente à crédit, tu peux aussi indiquer une **avance** déjà reçue
+  (ex : le client paie une partie tout de suite et le reste plus tard) — la
+  vente apparaît alors directement dans les dettes avec le bon solde restant.
 - **Tableau de bord** : ventes du jour, montant encaissé aujourd'hui, chiffre
   d'affaires et montant réellement encaissé sur une période (jour / semaine /
   mois / tout), total des dettes restantes, graphique des ventes des 14
   derniers jours.
 - **Dettes** : liste des clients qui doivent encore de l'argent, avec un
-  bouton pour encaisser une partie ou la totalité. Dès qu'une dette est
-  totalement réglée, elle disparaît automatiquement de la liste (mais la
-  vente reste dans l'historique et dans le chiffre d'affaires).
+  bouton pour encaisser une partie ou la totalité, et un badge d'ancienneté
+  (combien de jours depuis la vente) qui devient orange puis rouge quand une
+  dette traîne. Dès qu'une dette est totalement réglée, elle disparaît
+  automatiquement de la liste (mais la vente reste dans l'historique et dans
+  le chiffre d'affaires).
+- **Modifier une vente** : un bouton crayon sur les lignes de vente (dettes
+  et historique) permet de corriger une erreur de saisie (montant,
+  description, date, client). Le passage cash ↔ crédit est géré
+  automatiquement, mais reste bloqué quand ça créerait une incohérence (ex :
+  repasser en « cash » une vente à crédit déjà partiellement encaissée).
+- **Vue par client** : un onglet dédié qui regroupe les ventes par client
+  (total acheté, total encaissé, solde dû), avec une recherche par nom et un
+  détail complet au clic sur un client.
+- **Export CSV** : bouton dans l'historique des ventes pour exporter (en
+  respectant les filtres de date actifs) toutes les ventes dans un fichier
+  `.csv` compatible Excel, à garder pour ta comptabilité ou à partager.
+- **Mot de passe oublié** : lien sur l'écran de connexion pour recevoir un
+  email de réinitialisation.
+- **Synchronisation en temps réel** : si tu ouvres le site sur ton
+  téléphone et ton ordinateur en même temps, une vente ou un encaissement
+  fait sur l'un apparaît automatiquement sur l'autre, sans recharger la page.
 - **Connexion** : protégée par email + mot de passe (un seul compte).
 
 ## Pourquoi cette architecture (et pas juste des fichiers locaux)
@@ -56,6 +77,19 @@ ventes par jour) et ne demande aucune maintenance de serveur de ta part.
      va dans `config.js`. Ne prends jamais la **Secret key**
      (`sb_secret_...`) : elle ne doit jamais se retrouver dans un fichier
      accessible depuis le navigateur.
+5. Pour que le lien « mot de passe oublié » fonctionne, va dans
+   **Authentication > URL Configuration** et ajoute l'adresse de ton site
+   une fois en ligne (ex. `https://tonpseudo.github.io/ventes-admin/`) dans
+   **Redirect URLs**. Tant que le site n'est pas encore en ligne, tu peux
+   laisser cette étape pour plus tard et y revenir après l'hébergement
+   (section 3 ci-dessous).
+
+> **Si ton projet Supabase existait déjà avant cette mise à jour** (avant
+> les fonctionnalités d'édition, de recherche client, d'export CSV, etc.) :
+> il suffit de ré-exécuter le nouveau `schema.sql` dans le SQL Editor — il
+> est conçu pour être rejoué sans danger sur une base existante — afin
+> d'activer la synchronisation en temps réel entre appareils. Rien n'est
+> supprimé ni recréé.
 
 ### 2. Configurer le site
 
@@ -104,11 +138,17 @@ automatiquement de la liste des dettes.
 
 L'architecture (Supabase + règles de sécurité par compte) est faite pour
 grandir sans tout refaire :
-- ajouter d'autres membres de l'équipe avec leur propre connexion ;
+- ajouter d'autres membres de l'équipe avec leur propre connexion (rôles /
+  permissions) ;
+- ajouter un mode hors-ligne (file d'attente locale + synchronisation) pour
+  continuer à enregistrer des ventes sans connexion internet ;
 - ajouter la gestion du stock si le besoin apparaît ;
-- exporter les données en Excel ;
 - passer à une stack React/shadcn plus tard si le projet prend de l'ampleur
   (le modèle de données Supabase resterait le même).
+
+Ces deux premiers points (rôles multi-utilisateurs et mode hors-ligne)
+demandent chacun une vraie réflexion de conception avant de coder — on en
+reparle quand tu seras prêt à les aborder.
 
 ## Fichiers du projet
 

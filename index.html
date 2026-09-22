@@ -38,6 +38,7 @@
         <button type="submit" class="btn btn-primary btn-block" id="login-submit">
           <span id="login-submit-label">Se connecter</span>
         </button>
+        <button type="button" class="btn-link" id="forgot-password-link">Mot de passe oublié ?</button>
       </form>
     </div>
   </div>
@@ -63,7 +64,24 @@
       </div>
     </header>
 
+    <nav class="main-nav">
+      <button class="main-nav-item active" data-view="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Tableau de bord
+      </button>
+      <button class="main-nav-item" data-view="ventes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        Ventes
+        <span class="main-nav-badge" id="nav-dettes-badge"></span>
+      </button>
+      <button class="main-nav-item" data-view="clients">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Clients
+      </button>
+    </nav>
+
     <main>
+      <div id="view-dashboard" class="view">
       <!-- Today snapshot -->
       <section>
         <div class="kpi-grid">
@@ -132,15 +150,17 @@
       <section class="panel">
         <div class="panel-header">
           <div>
-            <div class="section-title">Ventes des 14 derniers jours</div>
-            <div class="section-sub">Montant vendu par jour</div>
+            <div class="section-title">Vendu vs encaissé — 14 derniers jours</div>
+            <div class="section-sub">Montant vendu par jour, comparé à ce qui a réellement été encaissé</div>
           </div>
         </div>
         <div class="chart-wrap">
           <div class="chart-canvas-box"><canvas id="sales-chart"></canvas></div>
         </div>
       </section>
+      </div>
 
+      <div id="view-ventes" class="view hidden">
       <!-- New sale action -->
       <section style="display:flex; justify-content:flex-end;">
         <button class="btn btn-primary" id="new-sale-btn">
@@ -169,6 +189,10 @@
             <div class="section-title">Historique des ventes</div>
             <div class="section-sub">Toutes les ventes enregistrées</div>
           </div>
+          <button class="btn btn-ghost btn-sm" id="export-csv-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+            Exporter CSV
+          </button>
         </div>
         <div class="panel-body">
           <div class="filter-row">
@@ -181,6 +205,22 @@
           <div class="table-wrap" id="sales-table-wrap"></div>
         </div>
       </section>
+      </div>
+
+      <div id="view-clients" class="view hidden">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="section-title">Clients</div>
+            <div class="section-sub">Total acheté, encaissé et dû par client</div>
+          </div>
+          <input type="text" id="client-search" placeholder="Rechercher un client…" style="max-width:220px;">
+        </div>
+        <div class="panel-body no-pad">
+          <div class="table-wrap" id="clients-table-wrap"></div>
+        </div>
+      </section>
+      </div>
     </main>
   </div>
 
@@ -188,7 +228,7 @@
   <div id="modal-sale" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-head">
-        <h2>Nouvelle vente</h2>
+        <h2 id="sale-modal-title">Nouvelle vente</h2>
         <button class="icon-btn-close" data-close="modal-sale" aria-label="Fermer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
@@ -219,6 +259,11 @@
               Crédit
             </button>
           </div>
+        </label>
+        <label class="field hidden" id="sale-avance-group">
+          Avance reçue (optionnel)
+          <input type="number" id="sale-avance" min="0" step="0.01" placeholder="0.00">
+          <span class="hint" id="sale-avance-hint">Laisse à 0 si le client n'a encore rien payé.</span>
         </label>
         <label class="field">
           Date de la vente
@@ -292,6 +337,43 @@
         <button type="button" class="btn btn-ghost" data-close="modal-confirm">Annuler</button>
         <button type="button" class="btn btn-destructive" id="confirm-action-btn">Supprimer</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: détail client ============ -->
+  <div id="modal-client" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="client-modal-title">Client</h2>
+        <button class="icon-btn-close" data-close="modal-client" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="history-summary" id="client-summary"></div>
+      <div class="history-list" id="client-ventes-list" style="max-height:320px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="modal-client">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: nouveau mot de passe (après lien de réinitialisation) ============ -->
+  <div id="modal-new-password" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Nouveau mot de passe</h2>
+      </div>
+      <p class="modal-subtitle">Tu as cliqué sur un lien de réinitialisation. Choisis un nouveau mot de passe pour ton compte.</p>
+      <form id="new-password-form" novalidate>
+        <label class="field">
+          Nouveau mot de passe
+          <input type="password" id="new-password-input" required minlength="6" autocomplete="new-password" placeholder="Au moins 6 caractères">
+        </label>
+        <p id="new-password-error" class="error-msg"></p>
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary btn-block" id="new-password-submit">Enregistrer le mot de passe</button>
+        </div>
+      </form>
     </div>
   </div>
 
