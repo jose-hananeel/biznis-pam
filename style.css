@@ -25,7 +25,12 @@
   --success-foreground: 0 0% 100%;
   --success-soft: 150 70% 94%;
 
-  --warning: 38 92% 45%;
+  /* Assombri par rapport à un orange "typique" (45% de luminosité) : à cette
+     teinte, le texte sur --warning-soft ne passait qu'à 2.4:1 de contraste
+     (sous le minimum WCAG AA de 4.5:1) — exactement sur les badges censés
+     attirer l'attention (dettes 7-30 jours, statut "Partiel"). À 30% de
+     luminosité, le même texte passe à 4.94:1. */
+  --warning: 38 92% 30%;
   --warning-foreground: 0 0% 100%;
   --warning-soft: 45 96% 92%;
 
@@ -186,6 +191,7 @@ a, button, input, select { outline: none; }
 .main-nav-item svg { width: 16px; height: 16px; }
 .main-nav-item:hover:not(.active) { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
 .main-nav-item.active { color: hsl(var(--primary)); background: hsl(var(--primary-soft)); }
+.nav-label-short { display: none; }
 .main-nav-badge {
   display: none;
   min-width: 18px; height: 18px; padding: 0 .3rem; border-radius: 999px;
@@ -348,13 +354,14 @@ input:focus, select:focus, textarea:focus {
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 /* ---------- Tables ---------- */
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow-x: auto; position: relative; }
 table.data-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
 .data-table thead th {
   text-align: left; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: hsl(var(--muted-foreground)); padding: .5rem 1.25rem; border-bottom: 1px solid hsl(var(--border));
   position: sticky; top: 0; background: hsl(var(--card));
 }
+.data-table th.num { text-align: right; }
 .data-table tbody td { padding: .7rem 1.25rem; border-bottom: 1px solid hsl(var(--border)); vertical-align: middle; }
 .data-table tbody tr { transition: background .12s ease; }
 .data-table tbody tr:hover { background: hsl(var(--muted) / 0.5); }
@@ -363,8 +370,30 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
 .chevron { width: 16px; height: 16px; color: hsl(var(--muted-foreground)); }
 .cell-strong { font-weight: 700; }
 .cell-muted { color: hsl(var(--muted-foreground)); }
+.cell-sub { font-size: .72rem; font-weight: 500; color: hsl(var(--muted-foreground)); margin-top: .15rem; }
 .cell-actions { display: flex; gap: .4rem; justify-content: flex-end; }
-.mono-num { font-variant-numeric: tabular-nums; }
+.mono-num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Dernière colonne (actions / chevron) toujours visible même quand le
+   tableau défile horizontalement (surtout utile sur mobile) : le geste
+   d'encaisser une dette ne doit jamais se retrouver caché hors écran. */
+.data-table thead th:last-child,
+.data-table tbody td:last-child {
+  position: sticky; right: 0; background: hsl(var(--card));
+}
+.data-table thead th:last-child { z-index: 2; }
+.data-table tbody tr:hover td:last-child { background: hsl(var(--muted)); }
+.data-table tbody tr[data-client]:hover td:last-child { background: hsl(var(--primary-soft)); }
+
+/* Indice de défilement horizontal, visible uniquement sur petit écran où
+   les tableaux ont plus de colonnes que de place. */
+.table-scroll-hint {
+  display: none; font-size: .72rem; font-style: italic; color: hsl(var(--muted-foreground));
+  padding: .6rem 1.25rem 0;
+}
+@media (max-width: 640px) {
+  .table-scroll-hint { display: block; }
+}
 
 /* ---------- Empty / loading states ---------- */
 .empty-state {
@@ -430,10 +459,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
 .history-item .h-date { color: hsl(var(--muted-foreground)); font-weight: 600; }
 .history-item .h-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
 .history-summary {
-  display: flex; justify-content: space-between; gap: .75rem; padding: .75rem .9rem;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem; padding: .75rem .9rem;
   background: hsl(var(--primary-soft)); border-radius: calc(var(--radius) - 3px); margin-bottom: 1rem; font-size: .82rem;
 }
 .history-summary b { font-size: .95rem; }
+.history-summary-amounts { display: flex; flex-wrap: wrap; gap: .75rem; }
 
 /* ---------- Toasts ---------- */
 #toast-container {
@@ -474,7 +504,16 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
   .topbar { padding: .75rem 1rem; }
   .main-nav { top: 49px; padding: .5rem .85rem; }
   .main-nav-item { flex: 1; justify-content: center; }
+  /* "Tableau de bord" est le seul libellé assez long pour revenir à la
+     ligne à cette largeur (contrairement à "Ventes"/"Clients") ; on bascule
+     sur une version courte pour garder les 3 items de la nav sur une
+     seule ligne, de même hauteur. */
+  .nav-label-full { display: none; }
+  .nav-label-short { display: inline; }
   .kpi-value { font-size: 1.3rem; }
   .data-table thead th, .data-table tbody td { padding: .6rem .8rem; }
   .modal { padding: 1.25rem; }
 }
+
+/* Empêche l'arrière-plan de défiler pendant qu'un modal est ouvert. */
+body.modal-open { overflow: hidden; }

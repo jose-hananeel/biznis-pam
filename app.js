@@ -159,21 +159,27 @@ function escapeHtml(str) {
 // -------------------------------------------------------------------------
 function openModal(id) {
   document.getElementById(id).classList.remove('hidden');
+  // Empêche l'arrière-plan de défiler pendant qu'un modal est ouvert (surtout
+  // gênant au doigt sur mobile, où le fond peut sinon bouger derrière la
+  // fenêtre qui reste fixe à l'écran).
+  document.body.classList.add('modal-open');
 }
 function closeModal(id) {
   document.getElementById(id).classList.add('hidden');
+  const stillOpen = document.querySelector('.modal-overlay:not(.hidden)');
+  if (!stillOpen) document.body.classList.remove('modal-open');
 }
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close')));
 });
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.classList.add('hidden');
+    if (e.target === overlay) closeModal(overlay.id);
   });
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(o => o.classList.add('hidden'));
+    document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(o => closeModal(o.id));
   }
 });
 
@@ -394,6 +400,36 @@ function renderAll() {
   renderDebts(paidMap);
   renderHistory(paidMap);
   renderClients();
+  updateClientDatalist();
+}
+
+// -------------------------------------------------------------------------
+// Normalisation des noms de client : évite qu'une variante de casse ou
+// d'espaces ("Marie Pierre" vs "marie  pierre") crée un client "fantôme"
+// distinct dans la vue Clients et fausse le suivi des dettes.
+// -------------------------------------------------------------------------
+function normalizeClientKey(name) {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function updateClientDatalist() {
+  const dl = document.getElementById('client-names-list');
+  if (!dl) return;
+  const seen = new Map();
+  for (const v of state.ventes) {
+    const key = normalizeClientKey(v.client_name);
+    if (!seen.has(key)) seen.set(key, v.client_name.trim());
+  }
+  // Construit les <option> via le DOM (et non innerHTML + interpolation) :
+  // un nom de client contenant un guillemet casserait un attribut value="..."
+  // construit par simple concaténation de chaîne.
+  dl.innerHTML = '';
+  const names = [...seen.values()].sort((a, b) => a.localeCompare(b, 'fr'));
+  for (const name of names) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    dl.appendChild(opt);
+  }
 }
 
 function renderTodayKpis(paidMap) {
@@ -538,8 +574,10 @@ function renderDebts(paidMap) {
         <td class="cell-muted">${escapeHtml(v.description)}</td>
         <td class="cell-muted">${formatDateDisplay(v.date)}</td>
         <td>${agingBadge(daysSince(v.date))}</td>
-        <td class="mono-num">${formatMoney(v.montant)}</td>
-        <td class="mono-num cell-strong" style="color:hsl(var(--destructive));">${formatMoney(solde)}</td>
+        <td class="mono-num cell-strong" style="color:hsl(var(--destructive));">
+          ${formatMoney(solde)}
+          ${paid > EPSILON ? `<div class="cell-sub">sur ${formatMoney(v.montant)}</div>` : ''}
+        </td>
         <td>
           <div class="cell-actions">
             ${paid > EPSILON ? `<button class="btn btn-ghost btn-sm" data-action="history" data-id="${v.id}">Historique</button>` : ''}
@@ -557,7 +595,7 @@ function renderDebts(paidMap) {
       <thead>
         <tr>
           <th>Client</th><th>Description</th><th>Date vente</th><th>Ancienneté</th>
-          <th>Montant</th><th>Reste à payer</th><th></th>
+          <th class="num">Reste à payer</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -609,7 +647,7 @@ function renderHistory(paidMap) {
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Date</th><th>Client</th><th>Description</th><th>Montant</th><th>Type</th><th>Statut</th><th></th></tr>
+        <tr><th>Date</th><th>Client</th><th>Description</th><th class="num">Montant</th><th>Type</th><th>Statut</th><th></th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
@@ -684,9 +722,12 @@ function computeClientsSummary() {
   const paidMap = paidMapByVente();
   const byClient = new Map();
   for (const v of state.ventes) {
-    const key = v.client_name.trim();
+    // Regroupement insensible à la casse et aux espaces superflus (une
+    // saisie "Marie Pierre" puis "marie  pierre" doit rester le même
+    // client) ; le nom affiché reste la première orthographe rencontrée.
+    const key = normalizeClientKey(v.client_name);
     if (!byClient.has(key)) {
-      byClient.set(key, { name: key, count: 0, totalAchete: 0, totalPaye: 0, lastDate: v.date, ventes: [] });
+      byClient.set(key, { name: v.client_name.trim(), count: 0, totalAchete: 0, totalPaye: 0, lastDate: v.date, ventes: [] });
     }
     const c = byClient.get(key);
     c.count += 1;
@@ -695,9 +736,12 @@ function computeClientsSummary() {
     if (v.date > c.lastDate) c.lastDate = v.date;
     c.ventes.push(v);
   }
+  // Triés par solde dû décroissant en priorité : c'est ce qu'un commerçant
+  // veut voir en premier (qui me doit le plus), plutôt que l'ordre
+  // alphabétique. À solde égal, on retombe sur le nom pour rester stable.
   return [...byClient.values()]
     .map(c => ({ ...c, solde: round2(c.totalAchete - c.totalPaye) }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    .sort((a, b) => b.solde - a.solde || a.name.localeCompare(b.name, 'fr'));
 }
 
 function renderClients() {
@@ -722,7 +766,7 @@ function renderClients() {
   const rows = clients.map((c, idx) => `
     <tr data-idx="${idx}">
       <td class="cell-strong">${escapeHtml(c.name)}</td>
-      <td class="cell-muted">${c.count}</td>
+      <td class="cell-muted mono-num">${c.count}</td>
       <td class="mono-num">${formatMoney(c.totalAchete)}</td>
       <td class="mono-num" style="color:hsl(var(--success));">${formatMoney(c.totalPaye)}</td>
       <td class="mono-num cell-strong"${c.solde > EPSILON ? ' style="color:hsl(var(--destructive));"' : ''}>${formatMoney(c.solde)}</td>
@@ -732,7 +776,7 @@ function renderClients() {
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Client</th><th>Ventes</th><th>Total acheté</th><th>Total encaissé</th><th>Solde dû</th><th></th></tr>
+        <tr><th>Client</th><th class="num">Ventes</th><th class="num">Total acheté</th><th class="num">Total encaissé</th><th class="num">Solde dû</th><th></th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
@@ -750,10 +794,27 @@ function openClientModal(name) {
   if (!client) return;
   const paidMap = paidMapByVente();
 
+  // La dette la plus ancienne de ce client encore due, s'il y en a une :
+  // permet d'encaisser directement depuis cette fiche, sans devoir revenir
+  // chercher la ligne dans le tableau des dettes.
+  const oldestUnpaid = client.ventes
+    .filter(v => v.type === 'credit' && soldeFor(v, paidMap) > EPSILON)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+
   document.getElementById('client-modal-title').textContent = client.name;
   document.getElementById('client-summary').innerHTML = `
-    <span>Total acheté : <b>${formatMoney(client.totalAchete)}</b></span>
-    <span>Solde dû : <b>${formatMoney(client.solde)}</b></span>`;
+    <div class="history-summary-amounts">
+      <span>Total acheté : <b>${formatMoney(client.totalAchete)}</b></span>
+      <span>Solde dû : <b>${formatMoney(client.solde)}</b></span>
+    </div>
+    ${oldestUnpaid ? `<button type="button" class="btn btn-soft btn-sm" id="client-modal-pay-btn">Encaisser</button>` : ''}`;
+
+  if (oldestUnpaid) {
+    document.getElementById('client-modal-pay-btn').addEventListener('click', () => {
+      closeModal('modal-client');
+      openPayModal(oldestUnpaid.id);
+    });
+  }
 
   const sortedVentes = client.ventes.slice().sort((a, b) => b.date.localeCompare(a.date));
   document.getElementById('client-ventes-list').innerHTML = sortedVentes.map(v => {
@@ -776,6 +837,7 @@ let saleType = 'cash';
 document.getElementById('new-sale-btn').addEventListener('click', () => {
   editingVenteId = null;
   document.getElementById('sale-modal-title').textContent = 'Nouvelle vente';
+  document.getElementById('sale-modal-subtitle').textContent = 'Enregistre une vente. Par défaut, la description est « Fournitures scolaires ».';
   document.getElementById('sale-submit').textContent = 'Enregistrer';
   document.getElementById('sale-form').reset();
   document.getElementById('sale-client').value = '';
@@ -793,6 +855,7 @@ function openEditModal(venteId) {
   if (!vente) return;
   editingVenteId = venteId;
   document.getElementById('sale-modal-title').textContent = 'Modifier la vente';
+  document.getElementById('sale-modal-subtitle').textContent = 'Modifie les détails de cette vente.';
   document.getElementById('sale-submit').textContent = 'Enregistrer les modifications';
   document.getElementById('sale-form').reset();
   document.getElementById('sale-client').value = vente.client_name;

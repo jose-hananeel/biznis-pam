@@ -67,7 +67,8 @@
     <nav class="main-nav">
       <button class="main-nav-item active" data-view="dashboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-        Tableau de bord
+        <span class="nav-label-full">Tableau de bord</span>
+        <span class="nav-label-short">Accueil</span>
       </button>
       <button class="main-nav-item" data-view="ventes">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
@@ -161,14 +162,6 @@
       </div>
 
       <div id="view-ventes" class="view hidden">
-      <!-- New sale action -->
-      <section style="display:flex; justify-content:flex-end;">
-        <button class="btn btn-primary" id="new-sale-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          Nouvelle vente
-        </button>
-      </section>
-
       <!-- Debts -->
       <section class="panel">
         <div class="panel-header">
@@ -176,8 +169,13 @@
             <div class="section-title">Dettes en cours</div>
             <div class="section-sub">Clients qui doivent encore de l'argent</div>
           </div>
+          <button class="btn btn-primary" id="new-sale-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Nouvelle vente
+          </button>
         </div>
         <div class="panel-body no-pad">
+          <span class="table-scroll-hint">Fais glisser le tableau pour voir plus de colonnes →</span>
           <div class="table-wrap" id="debts-table-wrap"></div>
         </div>
       </section>
@@ -202,6 +200,7 @@
           </div>
         </div>
         <div class="panel-body no-pad">
+          <span class="table-scroll-hint">Fais glisser le tableau pour voir plus de colonnes →</span>
           <div class="table-wrap" id="sales-table-wrap"></div>
         </div>
       </section>
@@ -217,6 +216,7 @@
           <input type="text" id="client-search" placeholder="Rechercher un client…" style="max-width:220px;">
         </div>
         <div class="panel-body no-pad">
+          <span class="table-scroll-hint">Fais glisser le tableau pour voir plus de colonnes →</span>
           <div class="table-wrap" id="clients-table-wrap"></div>
         </div>
       </section>
@@ -233,11 +233,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
-      <p class="modal-subtitle">Enregistre une vente. Par défaut, la description est « Fournitures scolaires ».</p>
+      <p class="modal-subtitle" id="sale-modal-subtitle">Enregistre une vente. Par défaut, la description est « Fournitures scolaires ».</p>
       <form id="sale-form" novalidate>
         <label class="field">
           Nom du client
-          <input type="text" id="sale-client" required placeholder="Ex : Jean Baptiste">
+          <input type="text" id="sale-client" required placeholder="Ex : Jean Baptiste" list="client-names-list" autocomplete="off">
+          <datalist id="client-names-list"></datalist>
         </label>
         <label class="field">
           Montant (HTG)
