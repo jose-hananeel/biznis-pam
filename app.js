@@ -204,6 +204,7 @@ document.getElementById('confirm-action-btn').addEventListener('click', async ()
 function switchView(view) {
   document.getElementById('view-dashboard').classList.toggle('hidden', view !== 'dashboard');
   document.getElementById('view-ventes').classList.toggle('hidden', view !== 'ventes');
+  document.getElementById('view-dettes').classList.toggle('hidden', view !== 'dettes');
   document.getElementById('view-clients').classList.toggle('hidden', view !== 'clients');
   if (view === 'clients') renderClients();
   document.querySelectorAll('.main-nav-item').forEach(btn => {
@@ -412,24 +413,52 @@ function normalizeClientKey(name) {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function updateClientDatalist() {
-  const dl = document.getElementById('client-names-list');
-  if (!dl) return;
+// Liste dédupliquée des noms de clients déjà connus (une entrée par nom
+// normalisé, casse d'affichage = première rencontrée) — utilisée à la fois
+// par l'autocomplete du formulaire et par le rapprochement de noms à l'import.
+function getKnownClientNames() {
   const seen = new Map();
   for (const v of state.ventes) {
     const key = normalizeClientKey(v.client_name);
     if (!seen.has(key)) seen.set(key, v.client_name.trim());
   }
+  return [...seen.values()];
+}
+
+function updateClientDatalist() {
+  const dl = document.getElementById('client-names-list');
+  if (!dl) return;
   // Construit les <option> via le DOM (et non innerHTML + interpolation) :
   // un nom de client contenant un guillemet casserait un attribut value="..."
   // construit par simple concaténation de chaîne.
   dl.innerHTML = '';
-  const names = [...seen.values()].sort((a, b) => a.localeCompare(b, 'fr'));
+  const names = getKnownClientNames().sort((a, b) => a.localeCompare(b, 'fr'));
   for (const name of names) {
     const opt = document.createElement('option');
     opt.value = name;
     dl.appendChild(opt);
   }
+}
+
+// Tente de rapprocher un nom importé (qui peut être un simple prénom, ou au
+// contraire le nom complet) d'un client déjà enregistré, pour éviter de
+// créer un doublon quand le client a donné son nom différemment d'une fois
+// à l'autre. Ambigu (plusieurs correspondances possibles) -> on laisse
+// l'utilisateur choisir lui-même dans la liste plutôt que de deviner.
+function findClientMatch(rawName, knownNames) {
+  const key = normalizeClientKey(rawName);
+  if (!key) return null;
+  let exact = null;
+  const fuzzy = [];
+  for (const name of knownNames) {
+    const k2 = normalizeClientKey(name);
+    if (k2 === key) { exact = name; break; }
+    if (k2.startsWith(key + ' ') || key.startsWith(k2 + ' ')) fuzzy.push(name);
+  }
+  if (exact) return { name: exact, exact: true, ambiguous: false };
+  if (fuzzy.length === 1) return { name: fuzzy[0], exact: false, ambiguous: false };
+  if (fuzzy.length > 1) return { name: null, exact: false, ambiguous: true };
+  return null;
 }
 
 function renderTodayKpis(paidMap) {
@@ -1013,6 +1042,263 @@ document.getElementById('sale-form').addEventListener('submit', async (e) => {
   toast('Vente enregistrée.', 'success');
   await fetchAll();
 });
+
+// -------------------------------------------------------------------------
+// Import d'un lot de ventes depuis un fichier JSON (ex : saisie à partir de
+// photos d'un cahier papier). Chaque entrée est présentée une par une dans
+// un petit assistant pour être vérifiée/corrigée avant d'être enregistrée :
+// pas d'import "en masse" silencieux qui pourrait injecter une erreur de
+// lecture (montant, nom...) sans contrôle.
+//
+// Format attendu : un tableau JSON (ou un objet {"ventes": [...]}) où
+// chaque élément peut avoir :
+//   client (texte, requis), montant (nombre, requis),
+//   description (texte, optionnel, défaut "Fournitures scolaires"),
+//   type ("cash" ou "credit", optionnel, défaut "cash"),
+//   date ("AAAA-MM-JJ", optionnel, défaut aujourd'hui),
+//   avance (nombre, optionnel, uniquement si type="credit")
+// -------------------------------------------------------------------------
+let importQueue = [];
+let importIndex = 0;
+let importStats = { imported: 0, skipped: 0, total: 0 };
+let importType = 'cash';
+
+function normalizeImportEntry(raw) {
+  raw = raw && typeof raw === 'object' ? raw : {};
+  const errors = [];
+
+  const client = String(raw.client ?? raw.nom ?? raw.client_name ?? '').trim();
+  if (!client) errors.push('nom du client manquant');
+
+  let montant = raw.montant;
+  if (typeof montant === 'string') montant = parseFloat(montant.replace(',', '.'));
+  montant = Number(montant);
+  if (!Number.isFinite(montant) || montant <= 0) errors.push('montant manquant ou invalide');
+
+  const description = String(raw.description ?? '').trim() || 'Fournitures scolaires';
+
+  const type = String(raw.type ?? 'cash').trim().toLowerCase();
+  if (type !== 'cash' && type !== 'credit') errors.push(`type invalide ("${raw.type}", attendu "cash" ou "credit")`);
+
+  const date = String(raw.date ?? '').trim() || todayStr();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push('date invalide, attendu AAAA-MM-JJ');
+
+  let avance = raw.avance;
+  if (avance === undefined || avance === null || avance === '') avance = 0;
+  if (typeof avance === 'string') avance = parseFloat(avance.replace(',', '.'));
+  avance = Number(avance);
+  if (!Number.isFinite(avance) || avance < 0) errors.push('avance invalide');
+  else if (type === 'credit' && Number.isFinite(montant) && avance > montant + EPSILON) errors.push("l'avance dépasse le montant");
+
+  return {
+    client,
+    montant: Number.isFinite(montant) ? montant : NaN,
+    description,
+    type: (type === 'cash' || type === 'credit') ? type : 'cash',
+    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayStr(),
+    avance: Number.isFinite(avance) ? avance : 0,
+    errors,
+  };
+}
+
+document.getElementById('import-json-btn').addEventListener('click', () => {
+  document.getElementById('import-json-input').click();
+});
+
+document.getElementById('import-json-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // permet de resélectionner le même fichier plus tard
+  if (!file) return;
+
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    toast('Impossible de lire ce fichier.', 'error');
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    toast('Fichier JSON invalide : vérifie la syntaxe (virgules, guillemets...).', 'error');
+    return;
+  }
+
+  const rawList = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.ventes) ? parsed.ventes : null);
+  if (!rawList) {
+    toast('Le fichier doit contenir un tableau de ventes (ou un objet { "ventes": [...] }).', 'error');
+    return;
+  }
+  if (!rawList.length) {
+    toast('Le fichier ne contient aucune entrée.', 'error');
+    return;
+  }
+
+  importQueue = rawList.map(normalizeImportEntry);
+  importIndex = 0;
+  importStats = { imported: 0, skipped: 0, total: importQueue.length };
+  renderImportStep();
+  openModal('modal-import');
+});
+
+function setImportType(value) {
+  importType = value;
+  document.getElementById('import-type-segmented').querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-value') === value);
+  });
+  document.getElementById('import-avance-group').classList.toggle('hidden', value !== 'credit');
+  if (value !== 'credit') document.getElementById('import-avance').value = '';
+  updateImportAvanceHint();
+}
+document.getElementById('import-type-segmented').querySelectorAll('button').forEach(btn => {
+  btn.addEventListener('click', () => setImportType(btn.getAttribute('data-value')));
+});
+
+function updateImportAvanceHint() {
+  const hint = document.getElementById('import-avance-hint');
+  const montant = parseFloat(document.getElementById('import-montant').value) || 0;
+  const avance = parseFloat(document.getElementById('import-avance').value) || 0;
+  if (montant > 0 && avance > 0) {
+    hint.textContent = `Reste dû après cette avance : ${formatMoney(Math.max(0, round2(montant - avance)))}.`;
+  } else {
+    hint.textContent = "Laisse à 0 si rien n'a encore été payé.";
+  }
+}
+document.getElementById('import-avance').addEventListener('input', updateImportAvanceHint);
+document.getElementById('import-montant').addEventListener('input', updateImportAvanceHint);
+
+function renderImportStep() {
+  if (importIndex >= importQueue.length) { finishImport(false); return; }
+
+  const entry = importQueue[importIndex];
+  const n = importIndex + 1;
+  document.getElementById('import-modal-subtitle').textContent =
+    `Entrée ${n} sur ${importStats.total} — ${importStats.imported} importée${importStats.imported === 1 ? '' : 's'}, ` +
+    `${importStats.skipped} ignorée${importStats.skipped === 1 ? '' : 's'} jusqu'ici.`;
+
+  const hintEl = document.getElementById('import-match-hint');
+  hintEl.classList.add('hidden');
+  hintEl.textContent = '';
+  let clientValue = entry.client;
+  if (entry.client) {
+    const match = findClientMatch(entry.client, getKnownClientNames());
+    if (match && match.ambiguous) {
+      hintEl.textContent = `Plusieurs clients déjà enregistrés ressemblent à « ${entry.client} » — vérifie dans la liste avant de confirmer.`;
+      hintEl.classList.remove('hidden');
+    } else if (match && !match.exact && match.name) {
+      clientValue = match.name;
+      hintEl.textContent = `Rapproché du client existant « ${match.name} » (le fichier indiquait « ${entry.client} »). Change le nom si ce n'est pas le bon client.`;
+      hintEl.classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('import-client').value = clientValue;
+  document.getElementById('import-montant').value = Number.isFinite(entry.montant) ? entry.montant : '';
+  document.getElementById('import-description').value = entry.description;
+  document.getElementById('import-date').value = entry.date;
+  setImportType(entry.type);
+  document.getElementById('import-avance').value = entry.avance > 0 ? entry.avance : '';
+  updateImportAvanceHint();
+
+  document.getElementById('import-error').textContent =
+    entry.errors.length ? `Problème détecté dans le fichier pour cette entrée : ${entry.errors.join(', ')}.` : '';
+}
+
+document.getElementById('import-skip-btn').addEventListener('click', () => {
+  importStats.skipped += 1;
+  importIndex += 1;
+  renderImportStep();
+});
+
+document.getElementById('import-cancel-btn').addEventListener('click', () => {
+  const remaining = importQueue.length - importIndex;
+  askConfirm({
+    title: "Annuler l'import ?",
+    body: `${importStats.imported} vente${importStats.imported === 1 ? '' : 's'} déjà importée${importStats.imported === 1 ? '' : 's'} seront conservée${importStats.imported === 1 ? '' : 's'}. ` +
+          `Les ${remaining} entrée${remaining === 1 ? '' : 's'} restante${remaining === 1 ? '' : 's'} ne seront pas importées.`,
+    confirmLabel: "Annuler l'import",
+    onConfirm: async () => { await finishImport(true); },
+  });
+});
+
+document.getElementById('import-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('import-error');
+  errEl.textContent = '';
+
+  const client_name = document.getElementById('import-client').value.trim();
+  const montant = parseFloat(document.getElementById('import-montant').value);
+  const description = document.getElementById('import-description').value.trim() || 'Fournitures scolaires';
+  const date = document.getElementById('import-date').value;
+
+  if (!client_name) { errEl.textContent = 'Le nom du client est requis.'; return; }
+  if (!montant || montant <= 0) { errEl.textContent = 'Le montant doit être supérieur à 0.'; return; }
+  if (!date) { errEl.textContent = 'La date est requise.'; return; }
+
+  let avance = 0;
+  if (importType === 'credit') {
+    const avanceRaw = document.getElementById('import-avance').value;
+    avance = avanceRaw ? parseFloat(avanceRaw) : 0;
+    if (Number.isNaN(avance) || avance < 0) { errEl.textContent = "L'avance ne peut pas être négative."; return; }
+    if (avance > montant + EPSILON) { errEl.textContent = "L'avance ne peut pas dépasser le montant total de la vente."; return; }
+  }
+
+  const submitBtn = document.getElementById('import-confirm-btn');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="spinner"></span>';
+
+  const { data: vente, error } = await supa.from('ventes')
+    .insert({ client_name, montant, description, type: importType, date })
+    .select().single();
+
+  if (error) {
+    errEl.textContent = error.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Confirmer et continuer';
+    return;
+  }
+
+  state.ventes.push(vente);
+  if (importType === 'cash') {
+    const { data: p, error: perr } = await supa.from('paiements').insert({ vente_id: vente.id, montant, date }).select().single();
+    if (perr) toast(`Vente importée, mais l'encaissement automatique a échoué : ${perr.message}`, 'error');
+    else state.paiements.push(p);
+  } else if (avance > EPSILON) {
+    const { data: p, error: perr } = await supa.from('paiements').insert({ vente_id: vente.id, montant: avance, date }).select().single();
+    if (perr) toast(`Vente importée, mais l'avance n'a pas pu être enregistrée : ${perr.message}`, 'error');
+    else state.paiements.push(p);
+  }
+
+  importStats.imported += 1;
+  renderAll(); // tableau de bord, badge de dettes et autocomplete à jour pendant l'import
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Confirmer et continuer';
+  importIndex += 1;
+  renderImportStep();
+});
+
+async function finishImport(cancelled) {
+  closeModal('modal-import');
+  const importedN = importStats.imported;
+  const skippedN = importStats.skipped + (cancelled ? Math.max(0, importQueue.length - importIndex) : 0);
+  importQueue = [];
+  importIndex = 0;
+
+  if (importedN > 0) await fetchAll(); // re-synchronise avec le serveur par sécurité
+
+  if (importedN > 0) {
+    toast(
+      `Import terminé : ${importedN} vente${importedN === 1 ? '' : 's'} importée${importedN === 1 ? '' : 's'}` +
+      (skippedN ? `, ${skippedN} ignorée${skippedN === 1 ? '' : 's'}.` : '.'),
+      'success'
+    );
+  } else {
+    toast('Import terminé : aucune vente importée.', 'error');
+  }
+}
 
 // -------------------------------------------------------------------------
 // Modal : encaisser

@@ -73,6 +73,10 @@
       <button class="main-nav-item" data-view="ventes">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
         Ventes
+      </button>
+      <button class="main-nav-item" data-view="dettes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+        Dettes
         <span class="main-nav-badge" id="nav-dettes-badge"></span>
       </button>
       <button class="main-nav-item" data-view="clients">
@@ -162,24 +166,6 @@
       </div>
 
       <div id="view-ventes" class="view hidden">
-      <!-- Debts -->
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <div class="section-title">Dettes en cours</div>
-            <div class="section-sub">Clients qui doivent encore de l'argent</div>
-          </div>
-          <button class="btn btn-primary" id="new-sale-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Nouvelle vente
-          </button>
-        </div>
-        <div class="panel-body no-pad">
-          <span class="table-scroll-hint">Fais glisser le tableau pour voir plus de colonnes →</span>
-          <div class="table-wrap" id="debts-table-wrap"></div>
-        </div>
-      </section>
-
       <!-- History -->
       <section class="panel">
         <div class="panel-header">
@@ -187,10 +173,21 @@
             <div class="section-title">Historique des ventes</div>
             <div class="section-sub">Toutes les ventes enregistrées</div>
           </div>
-          <button class="btn btn-ghost btn-sm" id="export-csv-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-            Exporter CSV
-          </button>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="new-sale-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Nouvelle vente
+            </button>
+            <button class="btn btn-ghost btn-sm" id="import-json-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
+              Importer (JSON)
+            </button>
+            <input type="file" id="import-json-input" accept=".json,application/json" class="hidden">
+            <button class="btn btn-ghost btn-sm" id="export-csv-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Exporter CSV
+            </button>
+          </div>
         </div>
         <div class="panel-body">
           <div class="filter-row">
@@ -202,6 +199,21 @@
         <div class="panel-body no-pad">
           <span class="table-scroll-hint">Fais glisser le tableau pour voir plus de colonnes →</span>
           <div class="table-wrap" id="sales-table-wrap"></div>
+        </div>
+      </section>
+      </div>
+
+      <div id="view-dettes" class="view hidden">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="section-title">Dettes en cours</div>
+            <div class="section-sub">Clients qui doivent encore de l'argent</div>
+          </div>
+        </div>
+        <div class="panel-body no-pad">
+          <span class="table-scroll-hint">Fais glisser le tableau pour voir plus de colonnes →</span>
+          <div class="table-wrap" id="debts-table-wrap"></div>
         </div>
       </section>
       </div>
@@ -275,6 +287,64 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close="modal-sale">Annuler</button>
           <button type="submit" class="btn btn-primary" id="sale-submit">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: import JSON (lot) ============ -->
+  <div id="modal-import" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Importer un lot</h2>
+        <button class="icon-btn-close" data-close="modal-import" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="modal-subtitle" id="import-modal-subtitle"></p>
+      <div id="import-match-hint" class="import-hint hidden"></div>
+      <form id="import-form" novalidate>
+        <label class="field">
+          Nom du client
+          <input type="text" id="import-client" required placeholder="Ex : Jean Baptiste" list="client-names-list" autocomplete="off">
+        </label>
+        <label class="field">
+          Montant (HTG)
+          <input type="number" id="import-montant" min="0.01" step="0.01" required placeholder="0.00">
+        </label>
+        <label class="field">
+          Description
+          <input type="text" id="import-description" required>
+        </label>
+        <label class="field">
+          Type de paiement
+          <div class="segmented" id="import-type-segmented">
+            <button type="button" class="active cash" data-value="cash">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+              Cash
+            </button>
+            <button type="button" class="credit" data-value="credit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+              Crédit
+            </button>
+          </div>
+        </label>
+        <label class="field hidden" id="import-avance-group">
+          Avance reçue (optionnel)
+          <input type="number" id="import-avance" min="0" step="0.01" placeholder="0.00">
+          <span class="hint" id="import-avance-hint">Laisse à 0 si rien n'a encore été payé.</span>
+        </label>
+        <label class="field">
+          Date de la vente
+          <input type="date" id="import-date" required>
+        </label>
+        <p id="import-error" class="error-msg"></p>
+        <div class="modal-actions justify-between">
+          <button type="button" class="btn btn-ghost btn-sm" id="import-skip-btn">Ignorer cette entrée</button>
+          <div class="btn-row">
+            <button type="button" class="btn btn-ghost" id="import-cancel-btn">Annuler l'import</button>
+            <button type="submit" class="btn btn-primary" id="import-confirm-btn">Confirmer et continuer</button>
+          </div>
         </div>
       </form>
     </div>

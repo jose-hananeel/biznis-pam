@@ -18,12 +18,24 @@ system fait main dans l'esprit de shadcn/ui.
   d'affaires et montant réellement encaissé sur une période (jour / semaine /
   mois / tout), total des dettes restantes, graphique des ventes des 14
   derniers jours.
-- **Dettes** : liste des clients qui doivent encore de l'argent, avec un
-  bouton pour encaisser une partie ou la totalité, et un badge d'ancienneté
-  (combien de jours depuis la vente) qui devient orange puis rouge quand une
-  dette traîne. Dès qu'une dette est totalement réglée, elle disparaît
-  automatiquement de la liste (mais la vente reste dans l'historique et dans
-  le chiffre d'affaires).
+- **Dettes** : onglet dédié (séparé de l'historique des ventes, pour ne pas
+  avoir à le parcourir quand tu veux juste enregistrer une vente) listant les
+  clients qui doivent encore de l'argent, avec un bouton pour encaisser une
+  partie ou la totalité, et un badge d'ancienneté (combien de jours depuis la
+  vente) qui devient orange puis rouge quand une dette traîne. Dès qu'une
+  dette est totalement réglée, elle disparaît automatiquement de la liste
+  (mais la vente reste dans l'historique et dans le chiffre d'affaires).
+- **Importer un lot de ventes (JSON)** : bouton dans l'historique des ventes
+  pour enregistrer d'un coup plusieurs ventes à partir d'un fichier JSON (ex :
+  des photos d'un cahier papier que tu fais relire par Claude, qui te sort un
+  fichier dans le bon format). Chaque entrée est présentée une par une dans
+  un petit assistant pour que tu vérifies/corriges le montant, le nom, etc.
+  avant de la confirmer — rien n'est enregistré sans ton accord explicite.
+  Si un nom de client du fichier ressemble à un client déjà enregistré (ex :
+  le fichier dit « Kettly » et tu as déjà « Kettly Dorval »), le champ est
+  pré-rempli avec le nom existant pour éviter de créer un doublon ; tu peux
+  toujours corriger si ce n'est pas le bon client. Voir la section
+  « Format du fichier d'import JSON » ci-dessous.
 - **Modifier une vente** : un bouton crayon sur les lignes de vente (dettes
   et historique) permet de corriger une erreur de saisie (montant,
   description, date, client). Le passage cash ↔ crédit est géré
@@ -133,6 +145,51 @@ que lorsque tu cliques sur « Encaisser ». Le montant restant à payer d'une
 vente est donc toujours : `montant de la vente − somme des encaissements
 liés à cette vente`. Dès que ce reste atteint 0, la vente sort
 automatiquement de la liste des dettes.
+
+## Format du fichier d'import JSON
+
+Pour importer un lot de ventes (bouton « Importer (JSON) » dans l'onglet
+Ventes), le fichier doit être un tableau JSON où chaque élément représente
+une vente. C'est exactement ce format qu'il faut demander à Claude de
+produire quand tu lui donnes des photos d'un cahier papier à informatiser.
+
+```json
+[
+  {
+    "client": "Jean Baptiste",
+    "montant": 450,
+    "description": "Fournitures scolaires",
+    "type": "cash",
+    "date": "2026-11-05"
+  },
+  {
+    "client": "Kettly",
+    "montant": 1200,
+    "type": "credit",
+    "avance": 400,
+    "date": "2026-11-06"
+  }
+]
+```
+
+Détail des champs :
+
+| Champ | Obligatoire | Valeur par défaut si absent |
+|---|---|---|
+| `client` | oui | — |
+| `montant` | oui | — |
+| `description` | non | `"Fournitures scolaires"` |
+| `type` | non | `"cash"` (sinon `"credit"`) |
+| `date` | non | aujourd'hui (format `AAAA-MM-JJ`) |
+| `avance` | non | `0` — uniquement utile si `type` est `"credit"` (une avance déjà reçue sur cette vente) |
+
+Pour le nom du client, inutile de chercher à retrouver l'orthographe exacte
+déjà utilisée dans l'appli (nom complet vs. prénom seul, casse...) : l'écran
+d'import te propose automatiquement le nom existant le plus proche quand il
+y en a un, et tu valides ou corriges à ce moment-là.
+
+Un fichier `{ "ventes": [...] }` (objet avec une clé `ventes`) est aussi
+accepté, au cas où Claude t'enverrait le tableau sous cette forme.
 
 ## Évolutions faciles plus tard
 
