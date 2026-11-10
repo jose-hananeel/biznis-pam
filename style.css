@@ -463,8 +463,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
   padding: .6rem .75rem; border-radius: calc(var(--radius) - 3px); background: hsl(var(--muted) / 0.6);
   font-size: .82rem;
 }
-.history-item .h-date { color: hsl(var(--muted-foreground)); font-weight: 600; }
-.history-item .h-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.history-item .h-left { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.history-item .h-label { font-weight: 700; }
+.history-item .h-date { color: hsl(var(--muted-foreground)); font-size: .74rem; font-weight: 500; }
+.history-item .h-amount { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .history-summary {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem; padding: .75rem .9rem;
   background: hsl(var(--primary-soft)); border-radius: calc(var(--radius) - 3px); margin-bottom: 1rem; font-size: .82rem;

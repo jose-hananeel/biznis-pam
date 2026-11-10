@@ -339,6 +339,7 @@ async function bootApp() {
   document.getElementById('pay-date').value = today;
   await fetchAll();
   setupRealtime();
+  renderImportResumeBanner();
 }
 
 // -------------------------------------------------------------------------
@@ -409,8 +410,15 @@ function renderAll() {
 // d'espaces ("Marie Pierre" vs "marie  pierre") crée un client "fantôme"
 // distinct dans la vue Clients et fausse le suivi des dettes.
 // -------------------------------------------------------------------------
+// Retire les accents/diacritiques ("é" -> "e", "ï" -> "i", ...) pour que la
+// recherche et le rapprochement de noms ne dépendent pas de la casse ni des
+// accents : "eleve" doit trouver "Élève", "Simeon" doit trouver "Siméon".
+function stripAccents(str) {
+  return str.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function normalizeClientKey(name) {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+  return stripAccents(name.trim().toLowerCase().replace(/\s+/g, ' '));
 }
 
 // Liste dédupliquée des noms de clients déjà connus (une entrée par nom
@@ -776,9 +784,9 @@ function computeClientsSummary() {
 function renderClients() {
   const wrap = document.getElementById('clients-table-wrap');
   if (!wrap) return; // pas encore rendu si le DOM de l'app n'est pas prêt
-  const search = (document.getElementById('client-search').value || '').trim().toLowerCase();
+  const search = stripAccents((document.getElementById('client-search').value || '').trim().toLowerCase());
   let clients = computeClientsSummary();
-  if (search) clients = clients.filter(c => c.name.toLowerCase().includes(search));
+  if (search) clients = clients.filter(c => stripAccents(c.name.toLowerCase()).includes(search));
 
   if (!clients.length) {
     wrap.innerHTML = emptyStateHtml(
@@ -1063,6 +1071,74 @@ let importIndex = 0;
 let importStats = { imported: 0, skipped: 0, total: 0 };
 let importType = 'cash';
 
+// Reprise d'un import interrompu (déconnexion, fermeture de l'onglet avant la
+// fin) : on garde la file et la position dans localStorage à chaque étape.
+// Les ventes déjà confirmées sont de toute façon déjà enregistrées côté
+// serveur — ça ne sert qu'à éviter de tout refaire depuis le début, et
+// d'importer deux fois les mêmes entrées, après une coupure.
+const IMPORT_PROGRESS_KEY = 'ventes-admin-import-progress';
+
+function saveImportProgress() {
+  try {
+    localStorage.setItem(IMPORT_PROGRESS_KEY, JSON.stringify({
+      queue: importQueue, index: importIndex, stats: importStats, type: importType,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch { /* stockage indisponible (navigation privée...) : tant pis, pas bloquant */ }
+}
+
+function clearImportProgress() {
+  try { localStorage.removeItem(IMPORT_PROGRESS_KEY); } catch { /* idem */ }
+}
+
+function loadImportProgress() {
+  try {
+    const raw = localStorage.getItem(IMPORT_PROGRESS_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved || !Array.isArray(saved.queue) || !saved.queue.length) return null;
+    if (!(saved.index < saved.queue.length)) return null; // déjà terminé
+    return saved;
+  } catch { return null; }
+}
+
+// Bandeau dans l'onglet Ventes signalant un import resté en cours (onglet
+// fermé/rechargé avant la fin) : reste affiché tant qu'il n'est pas repris
+// ou annulé, sans forcer à décider tout de suite — on peut continuer à
+// utiliser l'appli normalement et y revenir plus tard.
+function renderImportResumeBanner() {
+  const banner = document.getElementById('import-resume-banner');
+  const saved = loadImportProgress();
+  if (!saved) { banner.classList.add('hidden'); return; }
+  const remaining = saved.queue.length - saved.index;
+  document.getElementById('import-resume-text').textContent =
+    `${saved.stats.imported} vente${saved.stats.imported === 1 ? '' : 's'} déjà importée${saved.stats.imported === 1 ? '' : 's'}, ` +
+    `${remaining} entrée${remaining === 1 ? '' : 's'} restante${remaining === 1 ? '' : 's'} à passer en revue.`;
+  banner.classList.remove('hidden');
+}
+
+document.getElementById('import-resume-btn').addEventListener('click', () => {
+  const saved = loadImportProgress();
+  if (!saved) { renderImportResumeBanner(); return; }
+  importQueue = saved.queue;
+  importIndex = saved.index;
+  importStats = saved.stats;
+  importType = saved.type || 'cash';
+  renderImportStep();
+  openModal('modal-import');
+});
+
+document.getElementById('import-resume-dismiss-btn').addEventListener('click', () => {
+  const saved = loadImportProgress();
+  const remaining = saved ? saved.queue.length - saved.index : 0;
+  askConfirm({
+    title: "Annuler l'import resté en cours ?",
+    body: `Les ventes déjà importées sont conservées. Les ${remaining} entrée${remaining === 1 ? '' : 's'} restante${remaining === 1 ? '' : 's'} ne seront pas importées.`,
+    confirmLabel: "Annuler l'import",
+    onConfirm: () => { clearImportProgress(); renderImportResumeBanner(); },
+  });
+});
+
 function normalizeImportEntry(raw) {
   raw = raw && typeof raw === 'object' ? raw : {};
   const errors = [];
@@ -1139,6 +1215,8 @@ document.getElementById('import-json-input').addEventListener('change', async (e
   importQueue = rawList.map(normalizeImportEntry);
   importIndex = 0;
   importStats = { imported: 0, skipped: 0, total: importQueue.length };
+  saveImportProgress();
+  renderImportResumeBanner();
   renderImportStep();
   openModal('modal-import');
 });
@@ -1209,6 +1287,7 @@ function renderImportStep() {
 document.getElementById('import-skip-btn').addEventListener('click', () => {
   importStats.skipped += 1;
   importIndex += 1;
+  saveImportProgress();
   renderImportStep();
 });
 
@@ -1277,6 +1356,7 @@ document.getElementById('import-form').addEventListener('submit', async (e) => {
   submitBtn.disabled = false;
   submitBtn.textContent = 'Confirmer et continuer';
   importIndex += 1;
+  saveImportProgress();
   renderImportStep();
 });
 
@@ -1286,6 +1366,8 @@ async function finishImport(cancelled) {
   const skippedN = importStats.skipped + (cancelled ? Math.max(0, importQueue.length - importIndex) : 0);
   importQueue = [];
   importIndex = 0;
+  clearImportProgress();
+  renderImportResumeBanner();
 
   if (importedN > 0) await fetchAll(); // re-synchronise avec le serveur par sécurité
 
@@ -1364,6 +1446,26 @@ document.getElementById('pay-form').addEventListener('submit', async (e) => {
 // -------------------------------------------------------------------------
 // Modal : historique des paiements
 // -------------------------------------------------------------------------
+
+// Donne un libellé explicite à chaque ligne de l'historique (plutôt qu'une
+// simple date + montant sans contexte) : avance versée à la vente, premier/
+// second/... versement ultérieur, et précise quand une ligne solde la dette.
+// 'payments' doit déjà être trié par date croissante.
+function paymentLabels(vente, payments) {
+  const avanceIndex = (payments.length && payments[0].date === vente.date) ? 0 : -1;
+  let cum = 0;
+  let versementCount = 0;
+  return payments.map((p, i) => {
+    cum += Number(p.montant);
+    const settles = cum >= vente.montant - EPSILON;
+    if (i === avanceIndex) {
+      return settles ? 'Payé à la vente' : 'Avance à la vente';
+    }
+    versementCount += 1;
+    return settles ? `Versement ${versementCount} (solde réglé)` : `Versement ${versementCount}`;
+  });
+}
+
 function openHistoryModal(venteId) {
   const vente = state.ventes.find(v => v.id === venteId);
   if (!vente) return;
@@ -1385,9 +1487,13 @@ function openHistoryModal(venteId) {
   if (!payments.length) {
     list.innerHTML = `<p class="modal-subtitle" style="margin:0;">Aucun encaissement pour l'instant.</p>`;
   } else {
-    list.innerHTML = payments.map(p => `
+    const labels = paymentLabels(vente, payments);
+    list.innerHTML = payments.map((p, i) => `
       <div class="history-item">
-        <span class="h-date">${formatDateDisplay(p.date)}</span>
+        <div class="h-left">
+          <span class="h-label">${labels[i]}</span>
+          <span class="h-date">${formatDateDisplay(p.date)}</span>
+        </div>
         <span class="h-amount">${formatMoney(p.montant)}</span>
       </div>`).join('');
   }

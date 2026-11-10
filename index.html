@@ -166,6 +166,16 @@
       </div>
 
       <div id="view-ventes" class="view hidden">
+      <!-- Import interrompu : reste visible tant que ce n'est pas repris ou annulé,
+           pour ne pas forcer à décider tout de suite. -->
+      <div id="import-resume-banner" class="alert-box hidden">
+        <strong>Import de ventes inachevé</strong>
+        <span id="import-resume-text"></span>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary btn-sm" id="import-resume-btn">Reprendre l'import</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="import-resume-dismiss-btn">Annuler l'import</button>
+        </div>
+      </div>
       <!-- History -->
       <section class="panel">
         <div class="panel-header">
